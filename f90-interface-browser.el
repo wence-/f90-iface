@@ -174,7 +174,7 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
                (setf (gethash name existing)
                      val)))
            new))
-  
+
 (defun f90-specialisers (name interfaces)
   "Return all specialisers for NAME in INTERFACES."
   (f90-interface-specialisers (f90-get-interface name interfaces)))
@@ -264,7 +264,6 @@ for which the first args match."
         (f90-interface-browser-mode)
         (setq f90-buffer-to-switch-to buf)
         (setq f90-interface-type type)
-        
         (pop-to-buffer (current-buffer))))))
 
 (defun f90-format-specialised-arglist (arglist)
@@ -272,6 +271,7 @@ for which the first args match."
                (or x "UNION-TYPE"))
              arglist
              "; "))
+
 (define-derived-mode f90-interface-browser-mode fundamental-mode "IBrowse"
   "Major mode for browsing f90 interfaces."
   (setq buffer-read-only t)
@@ -355,7 +355,6 @@ for which the first args match."
     (insert (mapconcat (lambda (x)
                          (format "%s :: foo" x))
                        arglist "\n"))
-                       
     (f90-mode)
     (font-lock-fontify-buffer)
     (goto-char (point-min))
@@ -365,7 +364,7 @@ for which the first args match."
                                                (- (line-end-position) 7))
                      do (forward-line 1))
                "; ")))
-      
+
 (defun f90-set-public-attribute (interfaces)
   "Set public/private flag on all INTERFACES."
   (save-excursion
@@ -425,12 +424,12 @@ for which the first args match."
         collect (save-excursion
                   (save-restriction
                     (when (re-search-forward
-                               (format "^[ \t]*\\([^!\n].+?\\)[ \t]*::.*\\<%s\\>"
-                                       arg) nil t)
-                          (let ((type (match-string 1)))
-                            (when (string-match ",[ \t]*intent([^(]+)" type)
-                              (setq type (replace-match "" nil t type)))
-                            type))))))
+                           (format "^[ \t]*\\([^!\n].+?\\)[ \t]*::.*\\<%s\\>"
+                                   arg) nil t)
+                      (let ((type (match-string 1)))
+                        (when (string-match ",[ \t]*intent([^(]+)" type)
+                          (setq type (replace-match "" nil t type)))
+                        type))))))
 
 (defun f90-arglist-types ()
   (save-excursion
@@ -485,7 +484,6 @@ for which the first args match."
             else
             do (return nil)
             finally (return match)))))
-
 
 (defun f90-end-of-arglist ()
   (save-excursion
