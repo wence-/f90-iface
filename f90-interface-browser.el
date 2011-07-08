@@ -47,19 +47,27 @@
 
 ;;; Code:
 
-(require 'cl)
+(eval-when-compile (require 'cl))
 (require 'thingatpt)
+(require 'f90)
 
 (defstruct f90-interface
   (name "" :read-only t)
   (publicp nil)
   specialisers)
 
+
 (defstruct f90-specialiser
   (name "" :read-only t)
   (type "")
   (arglist "")
   (location))
+
+(defvar f90-interface-type nil)
+(make-variable-buffer-local 'f90-interface-type)
+
+(defvar f90-buffer-to-switch-to nil)
+(make-variable-buffer-local 'f90-buffer-to-switch-to)
 
 (defun f90-clean-continuation-lines ()
   "Splat Fortran continuation lines in the current buffer onto one line."
@@ -264,11 +272,6 @@ for which the first args match."
                (or x "UNION-TYPE"))
              arglist
              "; "))
-(defvar f90-interface-type nil)
-(make-variable-buffer-local 'f90-interface-type)
-
-(defvar f90-buffer-to-switch-to nil)
-(make-variable-buffer-local 'f90-buffer-to-switch-to)
 (define-derived-mode f90-interface-browser-mode fundamental-mode "IBrowse"
   "Major mode for browsing f90 interfaces."
   (setq buffer-read-only t)
@@ -377,6 +380,7 @@ for which the first args match."
                       (line-end-position))))
           ;; Set default
           (maphash (lambda (k v)
+                     (ignore k)
                      (setf (f90-interface-publicp v) public))
                    interfaces)
           ;; Override for those specified
@@ -449,8 +453,7 @@ for which the first args match."
         (f90-arg-types names)))))
 
 (defun f90-match-arglist-to-specialisers (arglist interface)
-  (let ((specialisers (f90-interface-specialisers interface))
-        (result nil))
+  (let ((specialisers (f90-interface-specialisers interface)))
     (loop for spec being the hash-values of specialisers
           when (f90-approx-arglist-match arglist
                                          (f90-specialiser-arglist spec))
@@ -523,6 +526,88 @@ for which the first args match."
           (setq b (1+ (point))))
         (forward-char))
       (nreverse ret))))
+
+(defun f90-clean-comments ()
+  (save-excursion
+    (goto-char (point-min))
+    (set-syntax-table f90-mode-syntax-table)
+    (while (not (eobp))
+      (when (nth 4 (parse-partial-sexp (point-min) (point)))
+        (delete-region (max (1- (point)) (line-beginning-position))
+                       (line-end-position)))
+      (forward-char 1))))
+
+(defun f90-parse-names-list (names)
+  "Return a list of names from the RHS of a :: type declaration."
+  (let ((names-list (f90-split-arglist names)))
+    (loop for name in names-list
+          if (string-match "\\`\\([^=]+\\)[ \t]*=.*\\'" name)
+          collect (match-string 1 name)
+          else
+          collect name)))
+
+(defun f90-parse-single-type-declaration ()
+  (when (looking-at "^[ \t]*\\(.*?\\)[ \t]*::[ \t]*\\(.*\\)$")
+    (let ((dec (match-string 1))
+          (names (f90-parse-names-list (match-string 2))))
+      (loop for name in names
+            collect (cons name (f90-split-declaration dec))))))
+
+(defsubst f90-count-commas (str)
+  (loop for c across str
+        when (eq c ?\,)
+        sum 1))
+
+(defun f90-split-declaration (dec)
+  (let ((things (f90-split-arglist dec)))
+    (cons (car things)
+          (loop for thing in (cdr things)
+                if (string-match "dimension(\\([^)]+\\))" thing)
+                collect (cons "dimension"
+                              (1+ (f90-count-commas (match-string 1 thing))))
+                else if (string-match "character([^)]+)" thing)
+                collect (cons "character" "*")
+                else
+                collect thing))))
+
+(defmacro f90-make-type-struct (type slots)
+  (let ((struct-name (make-symbol "struct-name")))
+    `(let ((,struct-name (make-symbol (format "f90-type.%s" ,type))))
+       `(defstruct ,,struct-name
+          ,@(loop for (name . rest) in slots
+                  if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
+                  do (progn (if (assoc "dimension" (cdr rest))
+                                (setcdr (assoc "dimension" (cdr rest))
+                                        (1+ (f90-count-commas
+                                             (match-string 2 name))))
+                              (push (cons "dimension"
+                                          (1+ (f90-count-commas
+                                               (match-string 2 name))))
+                                    (cdr rest)))
+                            (setq name (match-string 1 name)))
+                  collect `(,(make-symbol name) ',rest
+                            :read-only t))))))
+
+(defun f90-parse-type-definition (str)
+  (with-temp-buffer
+    (let (type slots slot)
+      (insert str)
+      (goto-char (point-min))
+      (f90-clean-comments)
+      (f90-clean-continuation-lines)
+      (unless (re-search-forward "^[ \t]*type[ \t]+\\(.+\\)[ \t]*$" nil t)
+        (error "Trying parse a type but no type found"))
+      (setq type (match-string 1))
+      (save-excursion
+        (unless (re-search-forward "^[ \t]*end[ \t]+type" nil t)
+          (error "Unable to find end of type %s" type))
+        (delete-region (line-beginning-position) (line-end-position)))
+      (while (not (eobp))
+        (setq slot (f90-parse-single-type-declaration))
+        (when slot
+          (setf slots (nconc slot slots)))
+        (forward-line 1))
+      (eval (f90-make-type-struct type slots)))))
 
 (provide 'f90-interface-browser)
 
