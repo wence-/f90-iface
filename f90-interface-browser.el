@@ -363,16 +363,27 @@ for which the first args match."
                "; ")))
       
 (defun f90-set-public-attribute (interfaces)
+  "Set public/private flag on all INTERFACES."
   (save-excursion
-    (while (re-search-forward "^[ \t]*public[ \t]+" nil t)
-      (let ((names (buffer-substring-no-properties
-                    (match-end 0)
-                    (line-end-position))))
-        (mapc (lambda (name)
-                (let ((interface (f90-get-interface name interfaces)))
-                  (when interface
-                    (setf (f90-interface-publicp interface) t))))
-              (split-string names "[, \t]" t))))))
+    ;; Default public unless private is specified.
+    (let ((public (not (save-excursion
+                         (re-search-forward "^[ \t]*private[ \t]*$" nil t)))))
+      (while (re-search-forward (format "^[ \t]*%s[ \t]+"
+                                        (if public "private" "public"))
+                                nil t)
+        (let ((names (buffer-substring-no-properties
+                      (match-end 0)
+                      (line-end-position))))
+          ;; Set default
+          (maphash (lambda (k v)
+                     (setf (f90-interface-publicp v) public))
+                   interfaces)
+          ;; Override for those specified
+          (mapc (lambda (name)
+                  (let ((interface (f90-get-interface name interfaces)))
+                    (when interface
+                      (setf (f90-interface-publicp interface) (not public)))))
+                (split-string names "[, \t]" t)))))))
 
 (defun f90-populate-specialisers (interface)
   (save-excursion
