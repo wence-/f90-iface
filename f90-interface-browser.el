@@ -77,6 +77,9 @@
         do (f90-parse-interfaces file f90-all-interfaces)))
 
 (defun f90-get-interface (name &optional interfaces)
+  "Get the interface with NAME from INTERFACES.
+
+If INTERFACES is nil use `f90-all-interfaces' instead."
   (gethash name (or interfaces f90-all-interfaces)))
 
 (defsetf f90-get-interface (name &optional interfaces) (val)
@@ -164,6 +167,7 @@
            new))
   
 (defun f90-specialisers (name interfaces)
+  "Return all specialisers for NAME in INTERFACES."
   (f90-interface-specialisers (f90-get-interface name interfaces)))
 
 (defun f90-valid-interface-name (name)
@@ -171,6 +175,10 @@
   (gethash name f90-all-interfaces))
 
 (defun f90-find-tag-interface (name)
+  "List all interfaces matching NAME.
+
+Restricts list to those matching the (possibly typed) arglist of the
+word at point."
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
                         (format "Interface (default %s): " def)
@@ -182,6 +190,12 @@
 
 (defun f90-browse-interface-specialisers (name &optional arglist-to-match
                                                first-args-to-match)
+  "Browse all interfaces matching NAME.
+
+If ARGLIST-TO-MATCH is non-nil restrict to those interfaces that match
+it.
+If FIRST-ARGS-TO-MATCH is non-nil only restrict to those interfaces
+for which the first args match."
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
                         (format "Interface%s: "
@@ -255,11 +269,20 @@
 (defvar f90-buffer-to-switch-to nil)
 (make-variable-buffer-local 'f90-buffer-to-switch-to)
 (define-derived-mode f90-interface-browser-mode fundamental-mode "IBrowse"
-  ""
+  "Major mode for browsing f90 interfaces."
   (setq buffer-read-only t)
   (set-buffer-modified-p nil))
 
+(let ((map (make-sparse-keymap)))
+  (define-key map (kbd "RET") 'f90-find-definition)
+  (define-key map (kbd "<down>") 'f90-next-definition)
+  (define-key map (kbd "<up>") 'f90-previous-definition)
+  (define-key map (kbd "q") 'f90-quit-browser)
+  (define-key map (kbd "<mouse-1>") 'f90-mouse-find-definition)
+  (setq f90-interface-browser-mode-map map))
+
 (defun f90-next-definition (&optional arg)
+  "Go to the next ARG'th specialiser definition."
   (interactive "p")
   (unless arg
     (setq arg 1))
@@ -271,6 +294,7 @@
     (decf arg)))
 
 (defun f90-previous-definition (&optional arg)
+  "Go to the previous ARG'th specialiser definition."
   (interactive "p")
   (unless arg
     (setq arg 1))
@@ -282,16 +306,9 @@
                          nil (point-min))))
     (f90-next-definition 1)
     (decf arg)))
-                                                
-(let ((map (make-sparse-keymap)))
-  (define-key map (kbd "RET") 'f90-find-definition)
-  (define-key map (kbd "<down>") 'f90-next-definition)
-  (define-key map (kbd "<up>") 'f90-previous-definition)
-  (define-key map (kbd "q") 'f90-quit-browser)
-  (define-key map (kbd "<mouse-1>") 'f90-mouse-find-definition)
-  (setq f90-interface-browser-mode-map map))
 
 (defun f90-mouse-find-definition (e)
+  "Visit the definition at the position of the event E."
   (interactive "e")
   (let ((win (posn-window (event-end e)))
         (point (posn-point (event-end e))))
@@ -302,12 +319,14 @@
       (f90-find-definition))))
 
 (defun f90-quit-browser ()
+  "Quit the interface browser."
   (interactive)
   (let ((buf f90-buffer-to-switch-to))
     (kill-buffer (current-buffer))
     (pop-to-buffer buf)))
 
 (defun f90-find-definition ()
+  "Visit the definition at `point'."
   (interactive)
   (let ((location (get-text-property (point) 'f90-specialiser-location))
         (name (get-text-property (point) 'f90-specialiser-name))
@@ -327,6 +346,7 @@
       (error "No definition at point"))))
 
 (defun f90-fontify-arglist (arglist)
+  "Fontify ARGLIST using `f90-mode'."
   (with-temp-buffer
     (insert (mapconcat (lambda (x)
                          (format "%s :: foo" x))
