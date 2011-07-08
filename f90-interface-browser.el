@@ -48,6 +48,7 @@
 ;;; Code:
 
 (require 'cl)
+(require 'thingatpt)
 
 (defstruct f90-interface
   (name "" :read-only t)
