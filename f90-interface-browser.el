@@ -79,6 +79,9 @@
 (defvar f90-all-interfaces (make-hash-table :test 'equal)
   "Hash table populated with all known f90 interfaces.")
 
+(defvar f90-types (make-hash-table :test 'equal)
+  "Hash table populated with all known f90 derived types.")
+
 (defun f90-parse-interfaces-in-dir (dir)
   "Parse all Fortran 90 files in DIR to populate `f90-all-interfaces'."
   (interactive "DParse files in directory: ")
@@ -110,28 +113,42 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
                     (match-string 1 fname))
             (file-name-directory file))))
         ;; Easier if we don't have to worry about line wrap
+        (f90-clean-comments)
         (f90-clean-continuation-lines)
         (goto-char (point-min))
         ;; Search forward for a named interface block
-        (while (re-search-forward "^[ \t]*interface[ \t]+\\([^ \t\n]+\\)[ \t]*$" nil t)
+        (while (re-search-forward
+                "^[ \t]*interface[ \t]+\\([^ \t\n]+\\)[ \t]*$" nil t)
           (let* ((name (match-string 1))
                  interface)
             (unless (string= name "")
               (setq interface (make-f90-interface :name name))
               (save-restriction
                 ;; Figure out all the specialisers for this generic name
-                (narrow-to-region (point)
-                                  (re-search-forward
-                                   (format "[ \t]*end interface\\(?:[ \t]+%s\\)?[ \t]*$"
-                                           name) nil t))
+                (narrow-to-region
+                 (point)
+                 (re-search-forward
+                  (format "[ \t]*end interface\\(?:[ \t]+%s\\)?[ \t]*$" name)
+                  nil t))
                 (f90-populate-specialisers interface))
               ;; Multiple interface blocks with same name (this seems to
               ;; be allowed).  In which case merge rather than overwrite.
               (if (f90-get-interface name interfaces)
                   (f90-merge-interface interface interfaces)
                 (setf (f90-get-interface name interfaces) interface)))))
-        ;; Now find out if an interface is public or private to the module
         (goto-char (point-min))
+        ;; Parse type definitions
+        (save-excursion
+          (while (re-search-forward
+                  "^[ \t]*type[ \t]+\\(?:[^ \t\n]+\\)[ \t]*$" nil t)
+            (let ((beg (match-beginning 0)))
+              (unless (re-search-forward "^[ \t]*end[ \t]+type.*$" nil t)
+                (error "Unable to find end of type definition"))
+              (save-restriction
+                (narrow-to-region beg (match-beginning 0))
+                (f90-parse-type-definition)))))
+
+        ;; Now find out if an interface is public or private to the module
         (f90-set-public-attribute interfaces)
 
         ;; Now find the arglists corresponding to the interface (so we
@@ -194,7 +211,7 @@ word at point."
                         f90-all-interfaces
                         nil t nil nil def))))
   (if (f90-valid-interface-name name)
-      (f90-browse-interface-specialisers name (f90-arglist-types ))
+      (f90-browse-interface-specialisers name (f90-arglist-types))
     (find-tag name)))
 
 (defun f90-browse-interface-specialisers (name &optional arglist-to-match
@@ -216,61 +233,78 @@ for which the first args match."
   (let ((buf (current-buffer)))
     (with-current-buffer (get-buffer-create "*Interface Browser*")
       (let ((interface (f90-get-interface name f90-all-interfaces))
-            (type nil))
+            (type nil)
+            (n-specs 0))
         (setq buffer-read-only nil)
         (erase-buffer)
-        (loop for s being the hash-values of
-              (f90-interface-specialisers interface)
-              when (or (and (null arglist-to-match)
-                            (null first-args-to-match))
-                       (f90-approx-arglist-match
-                        arglist-to-match s)
-                       (and first-args-to-match
-                            (f90-approx-arglist-match
-                             first-args-to-match s t)))
-              do (insert
-                  (propertize
-                   (concat (propertize
-                            (format "%s [defined in %s]\n    (%s)\n"
-                                    (propertize (f90-specialiser-name s)
-                                                'face 'bold)
-                                    (let ((f (car
-                                              (f90-specialiser-location s))))
-                                      (format "%s/%s"
-                                              (file-name-nondirectory
-                                               (directory-file-name
-                                                (file-name-directory f)))
-                                              (file-name-nondirectory f)))
-                                    (f90-fontify-arglist
-                                     (f90-specialiser-arglist s)))
-                            'f90-specialiser-location
-                            (f90-specialiser-location s)
-                            'f90-specialiser-name (f90-specialiser-name s)
-                            'mouse-face 'highlight
-                            'help-echo
-                            "mouse-1: find definition in other window")
-                           "\n")
-                   'f90-specialiser-extent (f90-specialiser-name s)))
-              (setq type (f90-specialiser-type s)))
+        (setq n-specs
+              (loop for s being the hash-values of
+                    (f90-interface-specialisers interface)
+                    do (setq type (f90-specialiser-type s))
+                    when (or (and (null arglist-to-match)
+                                  (null first-args-to-match))
+                             (f90-approx-arglist-match
+                              arglist-to-match s)
+                             (and first-args-to-match
+                                  (f90-approx-arglist-match
+                                   first-args-to-match s t)))
+                    do (insert
+                        (propertize
+                         (concat
+                          (propertize
+                           (format "%s [defined in %s]\n    (%s)\n"
+                                   (propertize (f90-specialiser-name s)
+                                               'face 'bold)
+                                   (let ((f (car
+                                             (f90-specialiser-location s))))
+                                     (format "%s/%s"
+                                             (file-name-nondirectory
+                                              (directory-file-name
+                                               (file-name-directory f)))
+                                             (file-name-nondirectory f)))
+                                   (f90-fontify-arglist
+                                    (f90-specialiser-arglist s)))
+                           'f90-specialiser-location
+                           (f90-specialiser-location s)
+                           'f90-specialiser-name (f90-specialiser-name s)
+                           'mouse-face 'highlight
+                           'help-echo
+                           "mouse-1: find definition in other window")
+                          "\n")
+                         'f90-specialiser-extent (f90-specialiser-name s)))
+                    and count 1))
         (goto-char (point-min))
-        (insert (format "Interfaces for %s%s %s:\n\n"
-                        (if (f90-interface-publicp interface)
-                            ""
-                          "private ")
-                        type (f90-interface-name interface)))
+        (insert (format "Interfaces for %s:\n\n"
+                        (f90-interface-name interface)))
         (when arglist-to-match
-          (insert (format "Only showing interfaces matching arglist:\n%s\n\n"
+          (insert (format "%s\n%s\n\n"
+                          (if (zerop n-specs)
+                              "No interfaces matching arglist (intrinsic?):"
+                            "Only showing interfaces matching arglist:")
                           (f90-format-specialised-arglist arglist-to-match))))
         (f90-interface-browser-mode)
         (setq f90-buffer-to-switch-to buf)
         (setq f90-interface-type type)
         (pop-to-buffer (current-buffer))))))
 
+(defsubst f90-format-parsed-slot-type (type)
+  (if (null type)
+      "UNION-TYPE"
+    (f90-fontify-arglist
+     (list (mapconcat 'identity (loop for a in type
+                                if (and (consp a)
+                                        (string= (car a) "dimension"))
+                                collect (format "dimension(%s)"
+                                                (mapconcat 'identity
+                                                           (make-list (cdr a)
+                                                                      ":")
+                                                           ","))
+                                else
+                                collect a)
+                ", ")))))
+
 (defun f90-format-specialised-arglist (arglist)
-  (mapconcat (lambda (x)
-               (or x "UNION-TYPE"))
-             arglist
-             "; "))
+  (mapconcat 'f90-format-parsed-slot-type arglist "; "))
 
 (define-derived-mode f90-interface-browser-mode fundamental-mode "IBrowse"
   "Major mode for browsing f90 interfaces."
@@ -353,7 +387,7 @@ for which the first args match."
   "Fontify ARGLIST using `f90-mode'."
   (with-temp-buffer
     (insert (mapconcat (lambda (x)
-                         (format "%s :: foo" x))
+                         (format "%s :: foo" (car x)))
                        arglist "\n"))
     (f90-mode)
     (font-lock-fontify-buffer)
@@ -395,11 +429,7 @@ for which the first args match."
     (while (search-forward "module procedure" nil t)
       (let ((names (buffer-substring-no-properties
                     (point)
-                    (save-excursion
-                      (when (re-search-forward "!" (line-end-position) t)
-                        (delete-region (match-beginning 0)
-                                       (line-end-position)))
-                      (line-end-position)))))
+                    (line-end-position))))
         (setf (f90-interface-specialisers interface)
               (make-hash-table :test 'equal))
         (mapc (lambda (x)
@@ -421,6 +451,10 @@ for which the first args match."
 
 (defun f90-arg-types (names)
   (loop for arg in names
+        for subspec = nil then nil
+        if (string-match "\\`\\([^%]+?\\)[ \t]*%\\(.+\\)\\'" arg)
+        do (setq subspec (match-string 2 arg)
+                 arg (match-string 1 arg))
         collect (save-excursion
                   (save-restriction
                     (when (re-search-forward
@@ -429,7 +463,26 @@ for which the first args match."
                       (let ((type (match-string 1)))
                         (when (string-match ",[ \t]*intent([^(]+)" type)
                           (setq type (replace-match "" nil t type)))
-                        type))))))
+                        (f90-get-type-subtype type subspec)))))))
+
+(defsubst f90-get-type (type)
+  (gethash type f90-types))
+
+(defsubst f90-get-slot-type (slot type)
+  (let ((fn (intern-soft (format "f90-type.%s-%s" type slot))))
+    (when fn
+      (funcall fn (f90-get-type type)))))
+
+(defun f90-get-type-subtype (type subspec)
+  (cond ((null subspec)
+         (list type))
+        ((string-match "\\`\\([^%]+?\\)[ \t]*%\\(.+\\)\\'" subspec)
+         (f90-get-type-subtype (car
+                                (f90-get-slot-type (match-string 1 subspec)
+                                                  type))
+                               (match-string 2 subspec)))
+        (t
+         (f90-get-slot-type subspec type))))
 
 (defun f90-arglist-types ()
   (save-excursion
@@ -464,7 +517,7 @@ for which the first args match."
 
 (defun f90-approx-arglist-match (arglist specialiser &optional match-sub-list)
   (let* ((n-passed-args (length arglist))
-         (spec-arglist (f90-specialiser-arglist specialiser))
+         (spec-arglist (mapcar 'car (f90-specialiser-arglist specialiser)))
          (n-spec-args (length spec-arglist))
          (n-required-args (f90-count-non-optional-args spec-arglist)))
     (when (or match-sub-list
@@ -477,13 +530,33 @@ for which the first args match."
             when (string-match ",[ \t]*optional" spec-arg)
             do (setq spec-arg (replace-match "" nil t spec-arg))
             ;; as can targets
-            when (string-match ", [ \t]*target" spec-arg)
+            when (string-match ",[ \t]*target" spec-arg)
             do (setq spec-arg (replace-match "" nil t spec-arg))
-            if (or (null arg) (string= arg spec-arg))
+            if (or (null arg) (f90-match-types arg spec-arg))
             do (setq match t)
             else
             do (return nil)
             finally (return match)))))
+
+(defun f90-match-types (parsed-type type)
+  ;; Ignore target in type
+  (when (string-match ",[ \t]*target" (car parsed-type))
+    (setf (car parsed-type) (replace-match "" nil t (car parsed-type))))
+  (if (null (cdr parsed-type))
+      (string= (f90-trim-string (car parsed-type)) type)
+    (and (string-match (format "\\`[ \t]*%s"
+                               (f90-trim-string (car parsed-type))) type)
+         (loop for thing in (cdr parsed-type)
+               if (and (consp thing) (string= (car thing) "dimension"))
+               do (unless (and (string-match "dimension[ \t]*(\\([^)]+\\))"
+                                             type)
+                               (= (cdr thing) (1+ (f90-count-commas
+                                                   (match-string 1 type)))))
+                    (return nil))
+               else
+               do (unless (string-match thing type)
+                    (return nil))
+               finally (return t)))))
 
 (defun f90-end-of-arglist ()
   (save-excursion
@@ -530,7 +603,7 @@ for which the first args match."
     (goto-char (point-min))
     (set-syntax-table f90-mode-syntax-table)
     (while (not (eobp))
-      (when (nth 4 (parse-partial-sexp (point-min) (point)))
+      (when (nth 4 (parse-partial-sexp (line-beginning-position) (point)))
         (delete-region (max (1- (point)) (line-beginning-position))
                        (line-end-position)))
       (forward-char 1))))
@@ -540,9 +613,9 @@ for which the first args match."
   (let ((names-list (f90-split-arglist names)))
     (loop for name in names-list
           if (string-match "\\`\\([^=]+\\)[ \t]*=.*\\'" name)
-          collect (match-string 1 name)
+          collect (f90-trim-string (match-string 1 name))
           else
-          collect name)))
+          collect (f90-trim-string name))))
 
 (defun f90-parse-single-type-declaration ()
   (when (looking-at "^[ \t]*\\(.*?\\)[ \t]*::[ \t]*\\(.*\\)$")
@@ -586,26 +659,22 @@ for which the first args match."
                   collect `(,(make-symbol name) ',rest
                             :read-only t))))))
 
-(defun f90-parse-type-definition (str)
-  (with-temp-buffer
-    (let (type slots slot)
-      (insert str)
-      (goto-char (point-min))
-      (f90-clean-comments)
-      (f90-clean-continuation-lines)
-      (unless (re-search-forward "^[ \t]*type[ \t]+\\(.+\\)[ \t]*$" nil t)
-        (error "Trying parse a type but no type found"))
-      (setq type (match-string 1))
-      (save-excursion
-        (unless (re-search-forward "^[ \t]*end[ \t]+type" nil t)
-          (error "Unable to find end of type %s" type))
-        (delete-region (line-beginning-position) (line-end-position)))
-      (while (not (eobp))
-        (setq slot (f90-parse-single-type-declaration))
-        (when slot
-          (setf slots (nconc slot slots)))
-        (forward-line 1))
-      (eval (f90-make-type-struct type slots)))))
+(defun f90-parse-type-definition ()
+  (let (type slots slot fn)
+    (goto-char (point-min))
+    (unless (re-search-forward "^[ \t]*type[ \t]+\\(.+?\\)[ \t]*$" nil t)
+      (error "Trying parse a type but no type found"))
+    (setq type (format "type(%s)" (match-string 1)))
+    (while (not (eobp))
+      (setq slot (f90-parse-single-type-declaration))
+      (when slot
+        (setf slots (nconc slot slots)))
+      (forward-line 1))
+    (eval (f90-make-type-struct type slots))
+    (setq fn (intern-soft (format "make-f90-type.%s" type)))
+    (unless fn
+      (error "Something bad went wrong parsing type definition %s" type))
+    (setf (gethash type f90-types) (funcall fn))))
 
 (provide 'f90-interface-browser)
 
