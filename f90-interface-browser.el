@@ -327,7 +327,7 @@ existing definition."
 
 
 (defun f90-match-arglist-to-specialisers (arglist interface)
-  "Return all specialisers of INTERFACE matching ARGLIST."
+  "Return all matches to ARGLIST in the specialisers of INTERFACE."
   (let ((specialisers (f90-interface-specialisers interface)))
     (loop for spec being the hash-values of specialisers
           when (f90-approx-arglist-match arglist
@@ -413,9 +413,11 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
 (defsubst f90-get-parsed-type-varname (type)
   "Return the variable name of TYPE."
   (car type))
+
 (defsubst f90-get-parsed-type-typename (type)
   "Return the type name of TYPE."
   (cadr type))
+
 (defsubst f90-get-parsed-type-modifiers (type)
   "Return the modifiers of TYPE."
   (cddr type))
