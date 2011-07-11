@@ -265,8 +265,12 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
         (progn (find-file-other-window (car location))
                (setq buf-to (current-buffer))
                (goto-char (cadr location))
-               (re-search-forward (format "%s[ \t]+%s[ \t]*("
-                                          type name) nil t)
+               ;; Try forwards then backwards near the recorded
+               ;; location
+               (or (re-search-forward (format "%s[ \t]+%s[ \t]*("
+                                              type name) nil t)
+                   (re-search-backward (format "%s[ \t]+%s[ \t]*("
+                                               type name) nil t))
                (beginning-of-line)
                (recenter 0)
                (pop-to-buffer buf)
@@ -581,11 +585,12 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
            (format "\\(function\\|subroutine\\)[ \t]+%s[ \t]*("
                    name)
            nil t)
-      (let* ((type (match-string 1))
+      (let* ((point (match-beginning 0))
+             (type (match-string 1))
              (args (f90-split-arglist (buffer-substring-no-properties
                                        (point)
                                        (f90-end-of-arglist)))))
-        (list type (f90-arg-types args) (point))))))
+        (list type (f90-arg-types args) point)))))
 
 (defun f90-parse-type-definition ()
   "Parse a type definition at (or in front of) `point'."
