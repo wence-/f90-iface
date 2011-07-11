@@ -77,6 +77,44 @@
 (defvar f90-types (make-hash-table :test 'equal)
   "Hash table populated with all known f90 derived types.")
 
+;;; Inlineable utility functions
+
+(defsubst f90-specialisers (name interfaces)
+  "Return all specialisers for NAME in INTERFACES."
+  (f90-interface-specialisers (f90-get-interface name interfaces)))
+
+(defsubst f90-valid-interface-name (name)
+  "Return non-nil if NAME is an interface name."
+  (gethash name f90-all-interfaces))
+
+(defsubst f90-count-commas (str)
+  "Count commas in STR."
+  (loop for c across str
+        count (eq c ?\,)))
+
+(defsubst f90-get-parsed-type-varname (type)
+  "Return the variable name of TYPE."
+  (car type))
+
+(defsubst f90-get-parsed-type-typename (type)
+  "Return the type name of TYPE."
+  (cadr type))
+
+(defsubst f90-get-parsed-type-modifiers (type)
+  "Return the modifiers of TYPE."
+  (cddr type))
+
+(defsubst f90-get-type (type)
+  "Return the struct definition corresponding to TYPE."
+  (gethash (f90-get-parsed-type-typename type) f90-types))
+
+(defsubst f90-get-slot-type (slot type)
+  "Get the type of SLOT in TYPE."
+  (let ((fn (intern-soft (format "f90-type.%s-%s"
+                                 (f90-get-parsed-type-typename type) slot))))
+    (when fn
+      (funcall fn (f90-get-type type)))))
+
 ;;; User-visible routines
 
 (defun f90-parse-interfaces-in-dir (dir)
@@ -263,13 +301,15 @@ existing definition."
   (with-current-buffer (get-buffer-create "*Type definition*")
     (setq buffer-read-only nil)
     (erase-buffer)
-    (let ((type-struct (f90-get-type (list nil type)))
-          (tname (and (string-match "\\`type(\\([^)]+\\))" type)
-                      (match-string 1 type)))
-          (fns (loop for fn being the symbols of obarray
-                     with start = (format "f90-type.%s." type)
-                     when (string-prefix-p start (symbol-name fn))
-                     collect fn)))
+    (let* ((type-struct (f90-get-type (list nil type)))
+           (tname (and (string-match "\\`type(\\([^)]+\\))" type)
+                       (match-string 1 type)))
+           (fns (loop for name in (funcall (intern-soft
+                                            (format "f90-type.%s.-varnames"
+                                                    type))
+                                           type-struct)
+                      collect (intern-soft (format "f90-type.%s.%s"
+                                                   type name)))))
       (insert (format "type %s\n" tname))
       (loop for fn in fns
             for parsed = (funcall fn type-struct)
@@ -282,7 +322,7 @@ existing definition."
       (goto-char (point-min))
       (f90-mode)
       (view-mode)
-      (switch-to-buffer (current-buffer)))))
+      (pop-to-buffer (current-buffer)))))
 
 ;;; Arglist matching/formatting
 
@@ -395,43 +435,6 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
 
 (defsetf f90-get-interface (name &optional interfaces) (val)
   `(setf (gethash ,name (or ,interfaces f90-all-interfaces)) ,val))
-
-
-(defsubst f90-specialisers (name interfaces)
-  "Return all specialisers for NAME in INTERFACES."
-  (f90-interface-specialisers (f90-get-interface name interfaces)))
-
-(defsubst f90-valid-interface-name (name)
-  "Return non-nil if NAME is an interface name."
-  (gethash name f90-all-interfaces))
-
-(defsubst f90-count-commas (str)
-  "Count commas in STR."
-  (loop for c across str
-        sum (eq c ?\,)))
-
-(defsubst f90-get-parsed-type-varname (type)
-  "Return the variable name of TYPE."
-  (car type))
-
-(defsubst f90-get-parsed-type-typename (type)
-  "Return the type name of TYPE."
-  (cadr type))
-
-(defsubst f90-get-parsed-type-modifiers (type)
-  "Return the modifiers of TYPE."
-  (cddr type))
-
-(defsubst f90-get-type (type)
-  "Return the struct definition corresponding to TYPE."
-  (gethash (f90-get-parsed-type-typename type) f90-types))
-
-(defsubst f90-get-slot-type (slot type)
-  "Get the type of SLOT in TYPE."
-  (let ((fn (intern-soft (format "f90-type.%s-%s"
-                                 (f90-get-parsed-type-typename type) slot))))
-    (when fn
-      (funcall fn (f90-get-type type)))))
 
 ;;; Entry point to parsing routines
 
@@ -602,25 +605,30 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
       (error "Something bad went wrong parsing type definition %s" type))
     (setf (gethash type f90-types) (funcall fn))))
 
-(defmacro f90-make-type-struct (type slots)
+(defun f90-make-type-struct (type slots)
   "Create a struct describing TYPE with SLOTS."
-  (let ((struct-name (make-symbol "struct-name")))
-    `(let ((,struct-name (make-symbol (format "f90-type.%s" ,type))))
-       `(defstruct (,,struct-name
-                    (:conc-name ,(make-symbol (format "f90-type.%s." ,type))))
-          ,@(loop for (name . rest) in slots
-                  if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
-                  do (progn (if (assoc "dimension" (cdr rest))
-                                (setcdr (assoc "dimension" (cdr rest))
-                                        (1+ (f90-count-commas
-                                             (match-string 2 name))))
-                              (push (cons "dimension"
-                                          (1+ (f90-count-commas
-                                               (match-string 2 name))))
-                                    (cdr rest)))
-                            (setq name (match-string 1 name)))
-                  collect `(,(make-symbol name) (cons ',name ',rest)
-                            :read-only t))))))
+  (let ((struct-name (make-symbol (format "f90-type.%s" type)))
+        (varnames (reverse (mapcar (lambda (x)
+                                     (setq x (car x))
+                                     (if (string-match "\\([^(]+\\)(" x)
+                                         (match-string 1 x)
+                                       x)) slots))))
+    `(defstruct (,struct-name
+                 (:conc-name ,(make-symbol (format "f90-type.%s." type))))
+       (-varnames ',varnames :read-only t)
+       ,@(loop for (name . rest) in slots
+               if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
+               do (progn (if (assoc "dimension" (cdr rest))
+                             (setcdr (assoc "dimension" (cdr rest))
+                                     (1+ (f90-count-commas
+                                          (match-string 2 name))))
+                           (push (cons "dimension"
+                                       (1+ (f90-count-commas
+                                            (match-string 2 name))))
+                                 (cdr rest)))
+                         (setq name (match-string 1 name)))
+               collect `(,(make-symbol name) (cons ',name ',rest)
+                         :read-only t)))))
 
 (defun f90-arglist-types ()
   "Return the types of the arguments to the function at `point'."
