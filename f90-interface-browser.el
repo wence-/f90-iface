@@ -560,12 +560,12 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
   "Find all specialisers for INTERFACE."
   (save-excursion
     (goto-char (point-min))
+    (setf (f90-interface-specialisers interface)
+          (make-hash-table :test 'equal))
     (while (search-forward "module procedure" nil t)
       (let ((names (buffer-substring-no-properties
                     (point)
                     (line-end-position))))
-        (setf (f90-interface-specialisers interface)
-              (make-hash-table :test 'equal))
         (mapc (lambda (x)
                 (setf (gethash x (f90-interface-specialisers interface))
                       (make-f90-specialiser :name x)))
