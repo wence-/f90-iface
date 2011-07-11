@@ -71,6 +71,9 @@
 (defvar f90-buffer-to-switch-to nil)
 (make-variable-buffer-local 'f90-buffer-to-switch-to)
 
+(defvar f90-invocation-marker nil)
+(make-variable-buffer-local 'f90-invocation-marker)
+
 (defvar f90-all-interfaces (make-hash-table :test 'equal)
   "Hash table populated with all known f90 interfaces.")
 
@@ -121,7 +124,7 @@
     (maphash (lambda (k v)
                (ignore v)
                (intern k table))
-             completion)
+             ctable)
     table))
 
 ;;; User-visible routines
@@ -147,11 +150,13 @@ word at point.  For the description of MATCH-SUBLIST see
                        current-prefix-arg)))
   (if (f90-valid-interface-name name)
       (f90-browse-interface-specialisers name (f90-arglist-types)
-                                         match-sublist)
+                                         match-sublist
+                                         (point-marker))
     (find-tag name)))
 
 (defun f90-browse-interface-specialisers (name &optional arglist-to-match
-                                               match-sublist)
+                                               match-sublist
+                                               invocation-point)
   "Browse all interfaces matching NAME.
 
 If ARGLIST-TO-MATCH is non-nil restrict to those interfaces that match
@@ -167,6 +172,7 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
                         f90-all-interfaces
                         nil t nil nil def))))
   (let ((buf (current-buffer)))
+    (or invocation-point (setq invocation-point (point-marker)))
     (with-current-buffer (get-buffer-create "*Interface Browser*")
       (let ((interface (f90-get-interface name f90-all-interfaces))
             (type nil)
@@ -217,6 +223,7 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
         (f90-interface-browser-mode)
         (setq f90-buffer-to-switch-to buf)
         (setq f90-interface-type type)
+        (setq f90-invocation-marker invocation-point)
         (pop-to-buffer (current-buffer))))))
 
 (defun f90-next-definition (&optional arg)
@@ -272,7 +279,8 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
         (buf (current-buffer))
         buf-to)
     (if location
-        (progn (find-file-other-window (car location))
+        (progn (ring-insert find-tag-marker-ring f90-invocation-marker)
+               (find-file-other-window (car location))
                (setq buf-to (current-buffer))
                (goto-char (cadr location))
                ;; Try forwards then backwards near the recorded
