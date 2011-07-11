@@ -132,7 +132,7 @@
 (defun f90-parse-interfaces-in-dir (dir)
   "Parse all Fortran 90 files in DIR to populate `f90-all-interfaces'."
   (interactive "DParse files in directory: ")
-  (loop for file in (directory-files dir t "\\.F90\\'")
+  (loop for file in (directory-files dir t "\\.\\(?:[fF]90\\|fpp\\)\\'")
         do (f90-parse-interfaces file f90-all-interfaces)))
 
 (defun f90-find-tag-interface (name &optional match-sublist)
