@@ -162,7 +162,11 @@ word at point.  For the description of MATCH-SUBLIST see
 If ARGLIST-TO-MATCH is non-nil restrict to those interfaces that match
 it.
 If MATCH-SUBLIST is non-nil only restrict to those interfaces for
-which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
+which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist.
+
+If INVOCATION-POINT is non-nil it should be a `point-marker'
+indicating where we were called from, for jumping back to with
+`pop-tag-mark'."
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
                         (format "Interface%s: "
