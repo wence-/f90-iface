@@ -115,6 +115,15 @@
     (when fn
       (funcall fn (f90-get-type type)))))
 
+(defsubst f90-merge-into-tags-completion-table (ctable)
+  "Merge interface completions in CTABLE into `tags-completion-table'."
+  (let ((table (tags-completion-table)))
+    (maphash (lambda (k v)
+               (ignore v)
+               (intern k table))
+             completion)
+    table))
+
 ;;; User-visible routines
 
 (defun f90-parse-interfaces-in-dir (dir)
@@ -131,8 +140,9 @@ word at point.  For the description of MATCH-SUBLIST see
 `f90-browse-interface-specialisers'."
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
-                        (format "Interface (default %s): " def)
-                        f90-all-interfaces
+                        (format "Find interface/tag (default %s): " def)
+                        (f90-merge-into-tags-completion-table
+                         f90-all-interfaces)
                         nil t nil nil def)
                        current-prefix-arg)))
   (if (f90-valid-interface-name name)
