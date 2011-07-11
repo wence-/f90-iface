@@ -110,7 +110,7 @@
 
 (defsubst f90-get-slot-type (slot type)
   "Get the type of SLOT in TYPE."
-  (let ((fn (intern-soft (format "f90-type.%s-%s"
+  (let ((fn (intern-soft (format "f90-type.%s.%s"
                                  (f90-get-parsed-type-typename type) slot))))
     (when fn
       (funcall fn (f90-get-type type)))))
