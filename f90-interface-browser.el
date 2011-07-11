@@ -252,6 +252,38 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist."
   (setq buffer-read-only t)
   (set-buffer-modified-p nil))
 
+;;; Show type definition
+
+(defun f90-show-type-definition (type)
+  "Show the definition of TYPE.
+
+This formats the parsed definition of TYPE, rather than jumping to the
+existing definition."
+  (interactive (list (completing-read "Type: " f90-types nil t "type(")))
+  (with-current-buffer (get-buffer-create "*Type definition*")
+    (setq buffer-read-only nil)
+    (erase-buffer)
+    (let ((type-struct (f90-get-type (list nil type)))
+          (tname (and (string-match "\\`type(\\([^)]+\\))" type)
+                      (match-string 1 type)))
+          (fns (loop for fn being the symbols of obarray
+                     with start = (format "f90-type.%s." type)
+                     when (string-prefix-p start (symbol-name fn))
+                     collect fn)))
+      (insert (format "type %s\n" tname))
+      (loop for fn in fns
+            for parsed = (funcall fn type-struct)
+                then (funcall fn type-struct)
+            do
+            (insert (format "  %s :: %s\n"
+                            (f90-format-parsed-slot-type parsed)
+                            (f90-get-parsed-type-varname parsed))))
+      (insert (format "end type %s\n" tname))
+      (goto-char (point-min))
+      (f90-mode)
+      (view-mode)
+      (switch-to-buffer (current-buffer)))))
+
 ;;; Arglist matching/formatting
 
 (defun f90-format-parsed-slot-type (type)
@@ -572,7 +604,8 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
   "Create a struct describing TYPE with SLOTS."
   (let ((struct-name (make-symbol "struct-name")))
     `(let ((,struct-name (make-symbol (format "f90-type.%s" ,type))))
-       `(defstruct ,,struct-name
+       `(defstruct (,,struct-name
+                    (:conc-name ,(make-symbol (format "f90-type.%s." ,type))))
           ,@(loop for (name . rest) in slots
                   if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
                   do (progn (if (assoc "dimension" (cdr rest))
