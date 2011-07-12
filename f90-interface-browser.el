@@ -128,6 +128,14 @@
              ctable)
     table))
 
+(defsubst f90-extract-type-name (name)
+  "Return the typename from NAME.
+
+If NAME matches type(TYPENAME) return TYPENAME, otherwise just NAME."
+  (if (and name (string-match "\\`type(\\([^)]+\\))\\'" name))
+      (match-string 1 name)
+    name))
+
 ;;; User-visible routines
 
 (defun f90-parse-interfaces-in-dir (dir)
@@ -319,35 +327,76 @@ indicating where we were called from, for jumping back to with
 
 ;;; Show type definition
 
+(defun f90-type-at-point ()
+  "Return a guess for the type of the thing at `point'.
+
+If `point' is currently on a line containing a variable declaration,
+return the typename of the declaration.  Otherwise try and figure out
+the typename of the variable at point (possibly including slot
+references)."
+  (let ((name (or
+               ;; Are we on a line with type(TYPENAME)?
+               (save-excursion
+                 (forward-line 0)
+                 (f90-parse-single-type-declaration))
+               ;; No, try and derive the type of the variable at point
+               (save-excursion
+                 (let ((syntax (copy-syntax-table f90-mode-syntax-table)))
+                   (modify-syntax-entry ?% "w" syntax)
+                   (with-syntax-table syntax
+                     (skip-syntax-backward "w")
+                     (f90-arg-types
+                      (list
+                       (buffer-substring-no-properties
+                        (point)
+                        (progn (skip-syntax-forward "w") (point)))))))))))
+    (f90-extract-type-name (f90-get-parsed-type-typename (car name)))))
+
 (defun f90-show-type-definition (type)
   "Show the definition of TYPE.
 
 This formats the parsed definition of TYPE, rather than jumping to the
-existing definition."
-  (interactive (list (completing-read "Type: " f90-types nil t "type(")))
+existing definition.
+
+When called interactively, default to the type of the thing at `point'.
+If `point' is on a type declaration line, the default is the
+declaration type.
+If `point' is on a variable name (possibly with slot references) the
+default is the type of the variable."
+  (interactive (list (let ((def (f90-type-at-point)))
+                       (completing-read
+                        (if def (format "Type (default %s): " def) "Type: ")
+                        (loop for type being the hash-keys of f90-types
+                              collect (f90-extract-type-name type))
+                        nil t nil nil def))))
   (with-current-buffer (get-buffer-create "*Type definition*")
     (setq buffer-read-only nil)
+    (fundamental-mode)
     (erase-buffer)
-    (let* ((type-struct (f90-get-type (list nil type)))
-           (tname (and (string-match "\\`type(\\([^)]+\\))" type)
-                       (match-string 1 type)))
-           (fns (loop for name in (funcall (intern-soft
-                                            (format "f90-type.%s.-varnames"
-                                                    type))
-                                           type-struct)
-                      collect (intern-soft (format "f90-type.%s.%s"
-                                                   type name)))))
-      (insert (format "type %s\n" tname))
-      (loop for fn in fns
-            for parsed = (funcall fn type-struct)
-                then (funcall fn type-struct)
-            do
-            (insert (format "  %s :: %s\n"
-                            (f90-format-parsed-slot-type parsed)
-                            (f90-get-parsed-type-varname parsed))))
-      (insert (format "end type %s\n" tname))
+    (let* ((tname (format "type(%s)" type))
+           (type-struct (f90-get-type (list nil tname)))
+           fns)
+      (when type-struct
+        (setq fns (loop for name in (funcall (intern-soft
+                                              (format "f90-type.%s.-varnames"
+                                                      tname))
+                                             type-struct)
+                        collect (intern-soft (format "f90-type.%s.%s"
+                                                     tname name)))))
+      (if (null type-struct)
+          (insert (format "The type %s is not a known derived type."
+                          type))
+        (insert (format "type %s\n" type))
+        (loop for fn in fns
+              for parsed = (funcall fn type-struct)
+              then (funcall fn type-struct)
+              do
+              (insert (format "  %s :: %s\n"
+                              (f90-format-parsed-slot-type parsed)
+                              (f90-get-parsed-type-varname parsed))))
+        (insert (format "end type %s\n" type))
+        (f90-mode))
       (goto-char (point-min))
-      (f90-mode)
       (view-mode)
       (pop-to-buffer (current-buffer)))))
 
