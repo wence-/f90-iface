@@ -38,10 +38,16 @@
 ;; on a function or subroutine call, you can call
 ;; `f90-find-tag-interface' and you'll be shown a list of the
 ;; interfaces that match the (possibly typed) argument list of the
-;; current function.
+;; current function.  This latter hooks into the `find-tag' machinery
+;; so that you can use it on the M-. keybinding and it will fall back
+;; to completing tag names if you don't want to look for an interface
+;; definition.
+
 ;; Derived types are also parsed, so that slot types of derived types
 ;; are given the correct type (rather than a UNION-TYPE) when arglist
-;; matching.
+;; matching.  You can show the definition of a know derived type by
+;; calling `f90-show-type-definition' which prompts (with completion)
+;; for a typename to show.
 
 ;; The parsing is by no means complete, it does a half-hearted attempt
 ;; using regular expressions (now you have two problems) rather than
@@ -91,10 +97,12 @@
   "Return non-nil if NAME is an interface name."
   (gethash name f90-all-interfaces))
 
-(defsubst f90-count-commas (str)
-  "Count commas in STR."
-  (loop for c across str
-        count (eq c ?\,)))
+(defsubst f90-count-commas (str &optional level)
+  "Count commas in STR.
+
+If LEVEL is non-nil, only count commas up to the specified nesting
+level.  For example, a LEVEL of 0 counts top-level commas."
+  (1- (length (f90-split-arglist str level))))
 
 (defsubst f90-get-parsed-type-varname (type)
   "Return the variable name of TYPE."
@@ -498,7 +506,7 @@ first (length ARGLIST) args of SPECIALISER."
 (defun f90-normalise-string (string)
   "Return a suitably normalised version of STRING."
   ;; Trim whitespace
-  (when (string-match "\\`[ \t]*\\([^ \t]+\\)[ \t]*\\'" string)
+  (when (string-match "\\`[ \t]*\\(.+?\\)[ \t]*\\'" string)
     (setq string (match-string 1 string)))
   (downcase string))
 
@@ -758,27 +766,33 @@ with slot B of type REAL, then A%B is returned being a REAL)."
         (t
          (f90-get-slot-type subspec type))))
 
-(defun f90-split-arglist (arglist)
+(defun f90-split-arglist (arglist &optional level)
   "Split ARGLIST into words.
 
 Split based on top-level commas. e.g.
 
   (f90-split-arglist \"foo, bar, baz(quux, zot)\")
-    => (\"foo\" \"bar\" \"baz(quux, zot)\")."
-  (let ((level 0)
-        b e
-        ret)
+    => (\"foo\" \"bar\" \"baz(quux, zot)\").
+
+If LEVEL is non-nil split on commas up to and including LEVEL.
+For example:
+
+  (f90-split-arglist \"foo, bar, baz(quux, zot)\" 1)
+    => (\"foo\" \"bar\" \"baz(quux\" \"zot)\")."
+  (let ((cur-level 0)
+        b e ret)
+    (setq level (or level 0))
     (with-temp-buffer
       (insert arglist "\n")
       (goto-char (point-min))
       (setq b (point))
       (while (not (eobp))
         (cond ((eq (char-after) ?\()
-               (incf level))
+               (incf cur-level))
               ((eq (char-after) ?\))
-               (decf level))
+               (decf cur-level))
               (t nil))
-        (when (and (zerop level)
+        (when (and (<= cur-level level)
                    (or (eq (char-after) ?\,)
                        (eolp)))
           (setq e (point))
@@ -831,7 +845,7 @@ and any modifiers."
   (let ((things (f90-split-arglist dec)))
     (cons (car things)
           (loop for thing in (cdr things)
-                if (string-match "dimension(\\([^)]+\\))" thing)
+                if (string-match "dimension(\\(.+\\))" thing)
                 collect (cons "dimension"
                               (1+ (f90-count-commas (match-string 1 thing))))
                 else if (string-match "character([^)]+)" thing)
