@@ -434,11 +434,10 @@ first (length ARGLIST) args of SPECIALISER."
   (save-excursion
     (goto-char (point-min))
     (set-syntax-table f90-mode-syntax-table)
-    (while (not (eobp))
+    (while (search-forward "!" nil t)
       (when (nth 4 (parse-partial-sexp (line-beginning-position) (point)))
-        (delete-region (max (1- (point)) (line-beginning-position))
-                       (line-end-position)))
-      (forward-char 1))))
+	(delete-region (max (1- (point)) (line-beginning-position))
+		       (line-end-position))))))
 
 (defun f90-clean-continuation-lines ()
   "Splat Fortran continuation lines in the current buffer onto one line."
