@@ -153,7 +153,7 @@ word at point.  For the description of MATCH-SUBLIST see
       (f90-browse-interface-specialisers name (f90-arglist-types)
                                          match-sublist
                                          (point-marker))
-    (find-tag name)))
+    (find-tag name match-sublist)))
 
 (defun f90-browse-interface-specialisers (name &optional arglist-to-match
                                                match-sublist
