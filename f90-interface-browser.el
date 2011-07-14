@@ -129,12 +129,14 @@ level.  For example, a LEVEL of 0 counts top-level commas."
 
 (defsubst f90-merge-into-tags-completion-table (ctable)
   "Merge interface completions in CTABLE into `tags-completion-table'."
-  (let ((table (tags-completion-table)))
-    (maphash (lambda (k v)
-               (ignore v)
-               (intern k table))
-             ctable)
-    table))
+  (if (or tags-file-name tags-table-list)
+      (let ((table (tags-completion-table)))
+        (maphash (lambda (k v)
+                   (ignore v)
+                   (intern k table))
+                 ctable)
+        table)
+    ctable))
 
 (defsubst f90-extract-type-name (name)
   "Return the typename from NAME.
