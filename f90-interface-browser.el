@@ -508,9 +508,10 @@ first (length ARGLIST) args of SPECIALISER."
 (defun f90-normalise-string (string)
   "Return a suitably normalised version of STRING."
   ;; Trim whitespace
-  (when (string-match "\\`[ \t]*\\(.+?\\)[ \t]*\\'" string)
-    (setq string (match-string 1 string)))
-  (downcase string))
+  (save-match-data
+    (when (string-match "\\`[ \t]*\\(.+?\\)[ \t]*\\'" string)
+      (setq string (match-string 1 string)))
+    (downcase string)))
 
 (defun f90-get-interface (name &optional interfaces)
   "Get the interface with NAME from INTERFACES.
