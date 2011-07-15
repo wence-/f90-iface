@@ -70,7 +70,7 @@
   (name "" :read-only t)
   (type "")
   (arglist "")
-  (location))
+  location)
 
 (defvar f90-interface-type nil)
 (make-variable-buffer-local 'f90-interface-type)
@@ -772,27 +772,23 @@ For example:
 
   (f90-split-arglist \"foo, bar, baz(quux, zot)\" 1)
     => (\"foo\" \"bar\" \"baz(quux\" \"zot)\")."
-  (let ((cur-level 0)
-        b e ret)
-    (setq level (or level 0))
-    (with-temp-buffer
-      (insert arglist "\n")
-      (goto-char (point-min))
-      (setq b (point))
-      (while (not (eobp))
-        (cond ((eq (char-after) ?\()
-               (incf cur-level))
-              ((eq (char-after) ?\))
-               (decf cur-level))
-              (t nil))
-        (when (and (<= cur-level level)
-                   (or (eq (char-after) ?\,)
-                       (eolp)))
-          (setq e (point))
-          (push (f90-normalise-string (buffer-substring b e)) ret)
-          (setq b (1+ (point))))
-        (forward-char))
-      (nreverse ret))))
+  (setq level (or level 0))
+  (loop for c across arglist
+        for i = 0 then (1+ i)
+        with cur-level = 0
+        with b = 0
+        with len = (length arglist)
+        if (eq c ?\()
+        do (incf cur-level)
+        else if (eq c ?\))
+        do (decf cur-level)
+        if (and (<= cur-level level)
+                (eq c ?,))
+        collect (f90-normalise-string (substring arglist b i))
+        and do (setq b (1+ i))
+        if (and (<= cur-level level)
+                (= (1+ i) len))
+        collect (f90-normalise-string (substring arglist b))))
 
 (defun f90-end-of-arglist ()
   "Find the end of the arglist at `point'."
