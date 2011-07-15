@@ -704,16 +704,6 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
                  (:conc-name ,(make-symbol (format "f90-type.%s." type))))
        (-varnames ',varnames :read-only t)
        ,@(loop for (name . rest) in slots
-               if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
-               do (progn (if (assoc "dimension" (cdr rest))
-                             (setcdr (assoc "dimension" (cdr rest))
-                                     (1+ (f90-count-commas
-                                          (match-string 2 name))))
-                           (push (cons "dimension"
-                                       (1+ (f90-count-commas
-                                            (match-string 2 name))))
-                                 (cdr rest)))
-                         (setq name (match-string 1 name)))
                collect `(,(make-symbol name) (cons ',name ',rest)
                          :read-only t)))))
 
@@ -835,10 +825,22 @@ Assumes that this has the form
 NAMES can optionally have initialisation attached to them which is
 dealt with correctly."
   (when (looking-at "^[ \t]*\\(.*?\\)[ \t]*::[ \t]*\\(.*\\)$")
-    (let ((dec (match-string 1))
+    (let ((dec-orig (match-string 1))
           (names (f90-parse-names-list (match-string 2))))
       (loop for name in names
-            collect (cons name (f90-split-declaration dec))))))
+            for dec = (f90-split-declaration dec-orig)
+            then (f90-split-declaration dec-orig)
+            if (string-match "\\([^(]+\\)(\\([^)]+\\))" name)
+            do (progn (if (assoc "dimension" dec)
+                          (setcdr (assoc "dimension" dec)
+                                  (1+ (f90-count-commas
+                                       (match-string 2 name))))
+                        (push (cons "dimension"
+                                    (1+ (f90-count-commas
+                                         (match-string 2 name))))
+                              dec))
+                      (setq name (match-string 1 name)))
+            collect (cons name dec)))))
 
 (defun f90-split-declaration (dec)
   "Split and parse a type declaration DEC.
@@ -848,7 +850,7 @@ and any modifiers."
   (let ((things (f90-split-arglist dec)))
     (cons (car things)
           (loop for thing in (cdr things)
-                if (string-match "dimension(\\(.+\\))" thing)
+                if (string-match "dimension[ \t]*(\\(.+\\))" thing)
                 collect (cons "dimension"
                               (1+ (f90-count-commas (match-string 1 thing))))
                 else if (string-match "character([^)]+)" thing)
