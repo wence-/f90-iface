@@ -532,7 +532,9 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
       ;; Fiddle things for Fluidity sources
       (when (and (file-exists-p file)
                  (file-readable-p file)
-                 (not (string-match "\\`Reference_count_interface" fname)))
+                 (not (string-match "\\`Reference_count_interface" fname))
+                 (not (string-equal "Refcount_interface_templates.F90" fname))
+                 (not (string-equal "Refcount_templates.F90" fname)))
         (insert-file-contents-literally file)
         (when (string-match "\\`Reference_count_\\([^\\.]+\\)\\.F90" fname)
           (insert-file-contents-literally
