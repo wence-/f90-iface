@@ -72,6 +72,16 @@
   (arglist "")
   location)
 
+(defgroup f90-iface nil
+  "Static parser for Fortran 90 code"
+  :prefix "f90-"
+  :group 'f90)
+
+(defcustom f90-file-extensions (list "f90" "F90" "fpp")
+  "Extensions to consider when looking for Fortran 90 files."
+  :type '(repeat string)
+  :group 'f90-iface)
+
 (defvar f90-interface-type nil)
 (make-variable-buffer-local 'f90-interface-type)
 
@@ -151,7 +161,10 @@ If NAME matches type(TYPENAME) return TYPENAME, otherwise just NAME."
 (defun f90-parse-interfaces-in-dir (dir)
   "Parse all Fortran 90 files in DIR to populate `f90-all-interfaces'."
   (interactive "DParse files in directory: ")
-  (loop for file in (directory-files dir t "\\.\\(?:[fF]90\\|fpp\\)\\'")
+  (loop for file in (directory-files dir t
+                                     (rx-to-string
+                                      `(and "." (or ,@f90-file-extensions)
+                                            eos) t))
         do (f90-parse-interfaces file f90-all-interfaces)))
 
 (defun f90-find-tag-interface (name &optional match-sublist)
