@@ -509,8 +509,10 @@ first (length ARGLIST) args of SPECIALISER."
   "Return a suitably normalised version of STRING."
   ;; Trim whitespace
   (save-match-data
-    (when (string-match "\\`[ \t]*\\(.+?\\)[ \t]*\\'" string)
-      (setq string (match-string 1 string)))
+    (when (string-match "\\`[ \t]+" string)
+      (setq string (replace-match "" t t string)))
+    (when (string-match "[ \t]+\\'" string)
+      (setq string (replace-match "" t t string)))
     (downcase string)))
 
 (defun f90-get-interface (name &optional interfaces)
