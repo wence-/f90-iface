@@ -32,11 +32,14 @@
 ;; Load this file and tell it to parse all the fortran files in your
 ;; code base.  You can do this one directory at a time by calling
 ;; `f90-parse-interfaces-in-dir' (M-x f90-parse-interfaces-in-dir
-;; RET).  Now you are able to browse (with completion) all defined
-;; interfaces in your code by calling
-;; `f90-browse-interface-specialisers'.  Alternatively, if `point' is
-;; on a function or subroutine call, you can call
-;; `f90-find-tag-interface' and you'll be shown a list of the
+;; RET).  Or you can parse all the fortran files in a directory and
+;; recursively in its subdirectories by calling
+;; `f90-parse-all-interfaces'.
+
+;; Now you are able to browse (with completion) all defined interfaces
+;; in your code by calling `f90-browse-interface-specialisers'.
+;; Alternatively, if `point' is on a function or subroutine call, you
+;; can call `f90-find-tag-interface' and you'll be shown a list of the
 ;; interfaces that match the (possibly typed) argument list of the
 ;; current function.  This latter hooks into the `find-tag' machinery
 ;; so that you can use it on the M-. keybinding and it will fall back
@@ -157,6 +160,32 @@ If NAME matches type(TYPENAME) return TYPENAME, otherwise just NAME."
     name))
 
 ;;; User-visible routines
+
+(defun f90-parse-all-interfaces (dir)
+  "Parse all interfaces found in DIR and its subdirectories.
+
+Recurse over all directories below DIR and parse interfaces found
+within them using `f90-parse-interfaces-in-dir'."
+  (interactive "DParse files in tree: ")
+  (let (dirs
+	attrs
+        seen
+	(pending (list (expand-file-name dir))))
+    (while pending
+      (push (pop pending) dirs)
+      (let* ((this-dir (car dirs))
+	     (contents (directory-files this-dir))
+	     (default-directory this-dir))
+	(setq attrs (nthcdr 10 (file-attributes this-dir)))
+	(unless (member attrs seen)
+	  (push attrs seen)
+	  (dolist (file contents)
+            ;; Ignore hidden directories
+	    (and (string-match "\\`[[:alnum:]]" file)
+		 (file-directory-p file)
+                 (setq pending (nconc pending
+                                      (list (expand-file-name file)))))))))
+    (mapc 'f90-parse-interfaces-in-dir dirs)))
 
 (defun f90-parse-interfaces-in-dir (dir)
   "Parse all Fortran 90 files in DIR to populate `f90-all-interfaces'."
