@@ -494,14 +494,6 @@ default is the type of the variable."
                "; ")))
 
 
-(defun f90-match-arglist-to-specialisers (arglist interface)
-  "Return all matches to ARGLIST in the specialisers of INTERFACE."
-  (let ((specialisers (f90-interface-specialisers interface)))
-    (loop for spec being the hash-values of specialisers
-          when (f90-approx-arglist-match arglist
-                                         (f90-specialiser-arglist spec))
-          collect spec)))
-
 (defun f90-count-non-optional-args (arglist)
   "Count non-optional args in ARGLIST."
   (loop for arg in arglist
