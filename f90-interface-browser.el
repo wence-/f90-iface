@@ -140,6 +140,17 @@ level.  For example, a LEVEL of 0 counts top-level commas."
     (when fn
       (funcall fn (f90-get-type type)))))
 
+(defun f90-lazy-completion-table ()
+  (lexical-let ((buf (current-buffer)))
+    (lambda (string pred action)
+      (with-current-buffer buf
+        (save-excursion
+          ;; If we need to ask for the tag table, allow that.
+          (let ((enable-recursive-minibuffers t))
+            (visit-tags-table-buffer))
+          (complete-with-action action (f90-merge-into-tags-completion-table f90-all-interfaces) string pred))))))
+
+
 (defsubst f90-merge-into-tags-completion-table (ctable)
   "Merge interface completions in CTABLE into `tags-completion-table'."
   (if (or tags-file-name tags-table-list)
@@ -205,8 +216,7 @@ word at point.  For the description of MATCH-SUBLIST see
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
                         (format "Find interface/tag (default %s): " def)
-                        (f90-merge-into-tags-completion-table
-                         f90-all-interfaces)
+                        (f90-lazy-completion-table)
                         nil t nil nil def)
                        current-prefix-arg)))
   (if (f90-valid-interface-name name)
