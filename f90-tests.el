@@ -17,7 +17,9 @@
   "Run each expression in 'forms' as a test case."
   `(test-combine-results
     ,@(loop for (expr res) in forms
-            collect `(test-report-result (equal ,expr ',res)
+            collect `(test-report-result (equal (condition-case err
+                                                    ,expr
+                                                  (error (gensym))) ',res)
                                          ',expr ',res))))
 
 (defmacro test-combine-results (&rest forms)
@@ -89,4 +91,3 @@
    (test-run-test 'type-modifiers)
    (test-run-test 'parse-declaration)
    (test-run-test 'splits)))
-
