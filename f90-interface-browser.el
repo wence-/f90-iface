@@ -754,17 +754,18 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
            (p (point))
            names)
       (with-temp-buffer
-        (insert str)
-        (goto-char (- p b))
-        (setq p (point-marker))
-        (f90-clean-continuation-lines)
-        (goto-char p)
-        (search-forward "(")
-        (setq names (f90-split-arglist (buffer-substring
-                                        (point)
-                                        (f90-end-of-arglist))))
-        (goto-char (point-min))
-        (f90-arg-types names)))))
+        (with-syntax-table f90-mode-syntax-table
+          (insert str)
+          (goto-char (- p b))
+          (setq p (point-marker))
+          (f90-clean-continuation-lines)
+          (goto-char p)
+          (search-forward "(")
+          (setq names (f90-split-arglist (buffer-substring
+                                          (point)
+                                          (f90-end-of-arglist))))
+          (goto-char (point-min))
+          (f90-arg-types names))))))
 
 (defun f90-arg-types (names)
   "Given NAMES of arguments return their types.
