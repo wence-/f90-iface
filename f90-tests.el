@@ -72,6 +72,8 @@
                                                             ("dimension" . 1))
                                                            ("name2" "integer"
                                                             ("dimension" . 2))))
+     ((fun "integer, pointer :: name(:, :)") (("name" "integer" "pointer"
+                                               ("dimension" . 2))))
      ((fun "integer, pointer :: NAmE => null()") (("name" "integer" "pointer"))))))
 
 

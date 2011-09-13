@@ -880,10 +880,11 @@ dealt with correctly."
                           (setcdr (assoc "dimension" dec)
                                   (1+ (f90-count-commas
                                        (match-string 2 name))))
-                        (push (cons "dimension"
-                                    (1+ (f90-count-commas
-                                         (match-string 2 name))))
-                              dec))
+                        (add-to-list 'dec
+                                     (cons "dimension"
+                                           (1+ (f90-count-commas
+                                                (match-string 2 name))))
+                                     t))
                       (setq name (match-string 1 name)))
             collect (cons name dec)))))
 
