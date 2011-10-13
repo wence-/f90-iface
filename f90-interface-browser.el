@@ -595,7 +595,7 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
         ;; Search forward for a named interface block
         (while (re-search-forward
                 "^[ \t]*interface[ \t]+\\([^ \t\n]+\\)[ \t]*$" nil t)
-          (let* ((name (match-string 1))
+          (let* ((name (f90-normalise-string (match-string 1)))
                  interface)
             (unless (string= name "")
               (setq interface (make-f90-interface :name name))
@@ -679,6 +679,7 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
                     (point)
                     (line-end-position))))
         (mapc (lambda (x)
+                (setq x (f90-normalise-string x))
                 (setf (gethash x (f90-interface-specialisers interface))
                       (make-f90-specialiser :name x)))
               (split-string names "[, \n]+" t))))))
@@ -728,7 +729,7 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
     (goto-char (point-min))
     (unless (re-search-forward "^[ \t]*type[ \t]+\\(.+?\\)[ \t]*$" nil t)
       (error "Trying parse a type but no type found"))
-    (setq type (format "type(%s)" (match-string 1)))
+    (setq type (format "type(%s)" (f90-normalise-string (match-string 1))))
     (while (not (eobp))
       (setq slot (f90-parse-single-type-declaration))
       (when slot
@@ -784,6 +785,7 @@ This works even with derived type subtypes (e.g. if A is a type(foo)
 with slot B of type REAL, then A%B is returned being a REAL)."
   (loop for arg in names
         for subspec = nil then nil
+        do (setq arg (f90-normalise-string arg))
         if (string-match "\\`\\([^%]+?\\)[ \t]*%\\(.+\\)\\'" arg)
         do (setq subspec (match-string 2 arg)
                  arg (match-string 1 arg))
