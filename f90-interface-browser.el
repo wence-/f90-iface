@@ -38,42 +38,67 @@
 
 ;; Now you are able to browse (with completion) all defined interfaces
 ;; in your code by calling `f90-browse-interface-specialisers'.
-;; Alternatively, if `point' is on a function or subroutine call, you
-;; can call `f90-find-tag-interface' and you'll be shown a list of the
+;; Alternatively, if `point' is on a procedure call, you can call
+;; `f90-find-tag-interface' and you'll be shown a list of the
 ;; interfaces that match the (possibly typed) argument list of the
-;; current function.  This latter hooks into the `find-tag' machinery
-;; so that you can use it on the M-. keybinding and it will fall back
+;; current procedure.  This latter hooks into the `find-tag' machinery
+;; so that you can use it on the M-.  keybinding and it will fall back
 ;; to completing tag names if you don't want to look for an interface
 ;; definition.
 
 ;; Derived types are also parsed, so that slot types of derived types
 ;; are given the correct type (rather than a UNION-TYPE) when arglist
-;; matching.  You can show the definition of a know derived type by
+;; matching.  You can show the definition of a known derived type by
 ;; calling `f90-show-type-definition' which prompts (with completion)
 ;; for a typename to show.
 
-;; The parsing is by no means complete, it does a half-hearted attempt
-;; using regular expressions (now you have two problems) rather than
-;; defining a grammar and doing full parsing.
+;; The parser assumes you write Fortran in the style espoused in
+;; Metcalf, Reid and Cohen.  Particularly, variable declarations use a
+;; double colon to separate the type from the name list.
+
+;; Here's an example of a derived type definition
+;;     type foo
+;;        real, allocatable, dimension(:) :: a
+;;        integer, pointer :: b, c(:)
+;;        type(bar) :: d
+;;     end type
+
+;; Here's a subroutine declaration
+;;     subroutine foo(a, b)
+;;        integer, intent(in) :: a
+;;        real, intent(inout), dimension(:,:) :: b
+;;        ...
+;;     end subroutine foo
+
+;; Local procedures whose names conflict with global ones will likely
+;; confuse the parser.  For example
+
+;;    subroutine foo(a, b)
+;;       ...
+;;    end subroutine foo
+;;
+;;    subroutine bar(a, b)
+;;       ...
+;;       call subroutine foo
+;;       ...
+;;     contains
+;;       subroutine foo
+;;          ...
+;;       end subroutine foo
+;;    end subroutine bar
+
+;; Also not handled are overloaded operators, scalar precision
+;; modifiers (integer(kind=foo_integer) and the like) and many other
+;; aspects.
 
 ;;; Code:
 
 ;;; Preamble
-(require 'cl)
+(eval-when-compile
+  (require 'cl))
 (require 'thingatpt)
 (require 'f90)
 (require 'etags)
-
-(defstruct f90-interface
-  (name "" :read-only t)
-  (publicp nil)
-  specialisers)
-
-(defstruct f90-specialiser
-  (name "" :read-only t)
-  (type "")
-  (arglist "")
-  location)
 
 (defgroup f90-iface nil
   "Static parser for Fortran 90 code"
@@ -85,6 +110,28 @@
   :type '(repeat string)
   :group 'f90-iface)
 
+(defcustom f90-file-name-check-functions '(f90-check-fluidity-refcount)
+  "List of functions to call to check if a file should be parsed.
+
+In addition to checking if a file exists and is readable, you can
+add extra checks before deciding to parse a file.  Each function
+will be called with one argument, the fully qualified name of the
+file to test, it should return non-nil if the file should be
+parsed.  For an example test function see
+`f90-check-fluidity-refcount'."
+  :type '(repeat function)
+  :group 'f90-iface)
+
+(defcustom f90-extra-file-functions '(f90-insert-fluidity-refcount)
+  "List of functions to call to insert extra files to parse.
+
+Each function should be a function of two arguments, the first is the
+fully qualified filename (with directory) the second is the
+unqualified filename."
+  :type '(repeat function)
+  :group 'f90-iface)
+
+;;; Internal variables
 (defvar f90-interface-type nil)
 (make-variable-buffer-local 'f90-interface-type)
 
@@ -94,6 +141,18 @@
 (defvar f90-invocation-marker nil)
 (make-variable-buffer-local 'f90-invocation-marker)
 
+;; Data types for storing interface and specialiser definitions
+(defstruct f90-interface
+  (name "" :read-only t)
+  (publicp nil)
+  specialisers)
+
+(defstruct f90-specialiser
+  (name "" :read-only t)
+  (type "")
+  (arglist "")
+  location)
+
 (defvar f90-all-interfaces (make-hash-table :test 'equal)
   "Hash table populated with all known f90 interfaces.")
 
@@ -101,7 +160,6 @@
   "Hash table populated with all known f90 derived types.")
 
 ;;; Inlineable utility functions
-
 (defsubst f90-specialisers (name interfaces)
   "Return all specialisers for NAME in INTERFACES."
   (f90-interface-specialisers (f90-get-interface name interfaces)))
@@ -141,6 +199,7 @@ level.  For example, a LEVEL of 0 counts top-level commas."
       (funcall fn (f90-get-type type)))))
 
 (defun f90-lazy-completion-table ()
+  "Lazily produce a completion table of all interfaces and tag names."
   (lexical-let ((buf (current-buffer)))
     (lambda (string pred action)
       (with-current-buffer buf
@@ -152,7 +211,7 @@ level.  For example, a LEVEL of 0 counts top-level commas."
 
 
 (defsubst f90-merge-into-tags-completion-table (ctable)
-  "Merge interface completions in CTABLE into `tags-completion-table'."
+  "Merge completions in CTABLE into the tags completion table."
   (if (or tags-file-name tags-table-list)
       (let ((table (tags-completion-table)))
         (maphash (lambda (k v)
@@ -165,7 +224,7 @@ level.  For example, a LEVEL of 0 counts top-level commas."
 (defsubst f90-extract-type-name (name)
   "Return the typename from NAME.
 
-If NAME matches type(TYPENAME) return TYPENAME, otherwise just NAME."
+If NAME is like type(TYPENAME) return TYPENAME, otherwise just NAME."
   (if (and name (string-match "\\`type(\\([^)]+\\))\\'" name))
       (match-string 1 name)
     name))
@@ -175,8 +234,10 @@ If NAME matches type(TYPENAME) return TYPENAME, otherwise just NAME."
 (defun f90-parse-all-interfaces (dir)
   "Parse all interfaces found in DIR and its subdirectories.
 
-Recurse over all directories below DIR and parse interfaces found
-within them using `f90-parse-interfaces-in-dir'."
+Recurse over all (non-hidden) directories below DIR and parse
+interfaces found within them using `f90-parse-interfaces-in-dir',
+a directory is considered hidden if it's name doesn't start with
+an alphanumeric character."
   (interactive "DParse files in tree: ")
   (let (dirs
 	attrs
@@ -210,8 +271,10 @@ within them using `f90-parse-interfaces-in-dir'."
 (defun f90-find-tag-interface (name &optional match-sublist)
   "List all interfaces matching NAME.
 
-Restricts list to those matching the (possibly typed) arglist of the
-word at point.  For the description of MATCH-SUBLIST see
+Restricts list to those matching the (possibly typed) arglist of
+the word at point.  If MATCH-SUBLIST is non-nil, only check if
+the arglist is a sublist of the specialiser's arglist.  For more
+details see `f90-approx-arglist-match' and
 `f90-browse-interface-specialisers'."
   (interactive (let ((def (word-at-point)))
                  (list (completing-read
@@ -387,7 +450,7 @@ indicating where we were called from, for jumping back to with
   (setq buffer-read-only t)
   (set-buffer-modified-p nil))
 
-;;; Show type definition
+;;; Type definitions
 
 (defun f90-type-at-point ()
   "Return a guess for the type of the thing at `point'.
@@ -499,10 +562,10 @@ default is the type of the variable."
     (mapconcat 'identity
                (loop while (not (eobp))
                      collect (buffer-substring (line-beginning-position)
-                                               (- (line-end-position) 7))
+                                               (- (line-end-position)
+                                                  (length " :: foo")))
                      do (forward-line 1))
                "; ")))
-
 
 (defun f90-count-non-optional-args (arglist)
   "Count non-optional args in ARGLIST."
@@ -570,24 +633,56 @@ If INTERFACES is nil use `f90-all-interfaces' instead."
 
 ;;; Entry point to parsing routines
 
+(defun f90-parse-file-p (file)
+  "Return non-nil if FILE should be parsed.
+
+This checks that FILE exists and is readable, and then calls
+additional test functions from `f90-file-name-check-functions'."
+  (and (file-exists-p file)
+       (file-readable-p file)
+       (loop for test in f90-file-name-check-functions
+             unless (funcall test file)
+             do (return nil)
+             finally (return t))))
+
+(defun f90-check-fluidity-refcount (file)
+  "Return nil if FILE is that of a Fluidity refcount template."
+  (let ((fname (file-name-nondirectory file)))
+    (and (not (string-match "\\`Reference_count_interface" fname))
+         (not (string-equal "Refcount_interface_templates.F90" fname))
+         (not (string-equal "Refcount_templates.F90" fname)))))
+
+(defun f90-maybe-insert-extra-files (file)
+  "Maybe insert extra files corresponding to FILE when parsing.
+
+To actually insert extra files, customize the variable
+`f90-extra-file-functions'.  For an example insertion function
+see `f90-insert-fluidity-refcount'."
+  (let ((fname (file-name-nondirectory file)))
+    (loop for fn in f90-extra-file-functions
+          do (funcall fn file fname))))
+
+(defun f90-insert-fluidity-refcount (file fname)
+  "Insert a Fluidity reference count template for FILE.
+
+If FNAME matches \\\\`Reference_count_.*\\\\.F90 then this file
+needs a reference count interface, so insert one."
+  (when (string-match "\\`Reference_count_\\([^\\.]+\\)\\.F90" fname)
+    (insert-file-contents-literally
+     (expand-file-name
+      (format "Reference_count_interface_%s.F90"
+              (match-string 1 fname))
+      (file-name-directory file)))))
+
 (defun f90-parse-interfaces (file existing)
   "Parse interfaces in FILE and merge into EXISTING interface data."
   (with-temp-buffer
-    (let ((interfaces (make-hash-table :test 'equal))
-          (fname (file-name-nondirectory file)))
-      ;; Fiddle things for Fluidity sources
-      (when (and (file-exists-p file)
-                 (file-readable-p file)
-                 (not (string-match "\\`Reference_count_interface" fname))
-                 (not (string-equal "Refcount_interface_templates.F90" fname))
-                 (not (string-equal "Refcount_templates.F90" fname)))
+    (let ((interfaces (make-hash-table :test 'equal)))
+      ;; Is this file valid for parsing
+      (when (f90-parse-file-p file)
         (insert-file-contents-literally file)
-        (when (string-match "\\`Reference_count_\\([^\\.]+\\)\\.F90" fname)
-          (insert-file-contents-literally
-           (expand-file-name
-            (format "Reference_count_interface_%s.F90"
-                    (match-string 1 fname))
-            (file-name-directory file))))
+        ;; Does this file have other parts elsewhere?
+        (f90-maybe-insert-extra-files file)
         ;; Easier if we don't have to worry about line wrap
         (f90-clean-comments)
         (f90-clean-continuation-lines)
@@ -813,7 +908,7 @@ with slot B of type REAL, then A%B is returned being a REAL)."
 (defun f90-split-arglist (arglist &optional level)
   "Split ARGLIST into words.
 
-Split based on top-level commas. e.g.
+Split based on top-level commas.  For example
 
   (f90-split-arglist \"foo, bar, baz(quux, zot)\")
     => (\"foo\" \"bar\" \"baz(quux, zot)\").
