@@ -88,8 +88,8 @@
 ;;    end subroutine bar
 
 ;; Also not handled are overloaded operators, scalar precision
-;; modifiers (integer(kind=foo_integer) and the like) and many other
-;; aspects.
+;; modifiers, like integer(kind=c_int), for which the precision is
+;; just ignored, and many other aspects.
 
 ;;; Code:
 
@@ -991,13 +991,15 @@ dealt with correctly."
 This takes the bit before the :: and returns a list of the typename
 and any modifiers."
   (let ((things (f90-split-arglist dec)))
-    (cons (car things)
+    (cons (if (string-match
+               "\\([^(]+?\\)[ \t]*([ \t]*\\(:?len\\|kind\\)[ \t]*=[^)]+)"
+               (car things))
+              (match-string 1 (car things))
+            (car things))
           (loop for thing in (cdr things)
                 if (string-match "dimension[ \t]*(\\(.+\\))" thing)
                 collect (cons "dimension"
                               (1+ (f90-count-commas (match-string 1 thing))))
-                else if (string-match "character([^)]+)" thing)
-                collect (cons "character" "*")
                 else
                 collect thing))))
 

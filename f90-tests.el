@@ -55,6 +55,7 @@
   (test-check
    ((f90-split-declaration "integer") ("integer"))
    ((f90-split-declaration "integer, pointer") ("integer" "pointer"))
+   ((f90-split-declaration "integer (kind = c_int(8)   )") ("integer"))
    ((f90-split-declaration "character(len=*)") ("character"))
    ((f90-split-declaration "integer, dimension(:)")
     ("integer" ("dimension" . 1)))))
