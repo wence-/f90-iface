@@ -5,6 +5,8 @@
 ;; Copyright (C) 2011 Lawrence Mitchell <wence@gmx.li>
 ;; Filename: f90-interface-browser.el
 ;; Created: 2011-07-06
+;; Available-from: http://github.com/wence-/f90-iface/
+;; Version: 1.0
 
 ;; COPYRIGHT NOTICE
 
@@ -90,6 +92,9 @@
 ;; Also not handled are overloaded operators, scalar precision
 ;; modifiers, like integer(kind=c_int), for which the precision is
 ;; just ignored, and many other aspects.
+
+;; Some tests of the parser are available in f90-tests.el (in the same
+;; repository as this file).
 
 ;;; Code:
 
