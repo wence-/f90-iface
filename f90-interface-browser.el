@@ -47,6 +47,12 @@
 ;; so that you can use it on the M-.  keybinding and it will fall back
 ;; to completing tag names if you don't want to look for an interface
 ;; definition.
+;; In addition, if you're in a large procedure and want the list of
+;; the variables in scope (perhaps you want to define a new loop
+;; variable), you can use `f90-list-in-scope-vars' to pop up a buffer
+;; giving a reasonable guess.  Note this doesn't give you module
+;; variables, or the variables of parent procedures if the current
+;; subroutine is contained within another.
 
 ;; Derived types are also parsed, so that slot types of derived types
 ;; are given the correct type (rather than a UNION-TYPE) when arglist
@@ -900,6 +906,9 @@ needs a reference count interface, so insert one."
               (forward-line 1))
             (when (not (looking-at "^\\s-*$"))
               (setq type (ignore-errors (f90-parse-single-type-declaration)))
+              ;; If we were on a line with text and failed to parse a
+              ;; type, we must have reached the end of the type
+              ;; definitions, so don't push it on and finish.
               (if type
                   (push type types)
                 (setq not-done nil)))
@@ -908,6 +917,7 @@ needs a reference count interface, so insert one."
       (setq buffer-read-only nil)
       (erase-buffer)
       (f90-mode)
+      ;; Show types of the same type together
       (setq types (sort types (lambda (x y)
                                 (string< (cadar x) (cadar y)))))
       (loop for (type name) in types
