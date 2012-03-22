@@ -895,6 +895,9 @@ needs a reference count interface, so insert one."
         (let ((not-done t)
               type)
           (while (and not-done (not (eobp)))
+            ;; skip "implicit none" which may appear at top of procedure
+            (when (looking-at "\\s-*implicit\\s-+none")
+              (forward-line 1))
             (when (not (looking-at "^\\s-*$"))
               (setq type (ignore-errors (f90-parse-single-type-declaration)))
               (if type
