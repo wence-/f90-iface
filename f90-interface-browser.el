@@ -878,6 +878,44 @@ needs a reference count interface, so insert one."
           (goto-char (point-min))
           (f90-arg-types names))))))
 
+(defun f90-list-in-scope-vars ()
+  "Pop up a buffer showing all variables in scope in the procedure at `point'"
+  (interactive)
+  (let* ((e (save-excursion (f90-end-of-subprogram) (point)))
+         (b (save-excursion (f90-beginning-of-subprogram) (point)))
+         (str (buffer-substring-no-properties b e))
+         types)
+    (with-temp-buffer
+      (with-syntax-table f90-mode-syntax-table
+        (insert str)
+        (goto-char (point-min))
+        (f90-clean-comments)
+        (f90-clean-continuation-lines)
+        (forward-line 1)                ; skip procedure name
+        (let ((not-done t)
+              type)
+          (while (and not-done (not (eobp)))
+            (when (not (looking-at "^\\s-*$"))
+              (setq type (ignore-errors (f90-parse-single-type-declaration)))
+              (if type
+                  (push type types)
+                (setq not-done nil)))
+            (forward-line 1)))))
+    (with-current-buffer (get-buffer-create "*Variables in scope*")
+      (setq buffer-read-only nil)
+      (erase-buffer)
+      (f90-mode)
+      (setq types (sort types (lambda (x y)
+                                (string< (cadar x) (cadar y)))))
+      (loop for (type name) in types
+            do
+            (insert (format "%s :: %s\n"
+                            (f90-format-parsed-slot-type type)
+                            (f90-get-parsed-type-varname type))))
+      (pop-to-buffer (current-buffer))
+      (goto-char (point-min))
+      (setq buffer-read-only t))))
+
 (defun f90-arg-types (names)
   "Given NAMES of arguments return their types.
 
