@@ -2,7 +2,7 @@
 
 ;; This file is NOT part of Emacs.
 
-;; Copyright (C) 2011 Lawrence Mitchell <wence@gmx.li>
+;; Copyright (C) 2011, 2012 Lawrence Mitchell <wence@gmx.li>
 ;; Filename: f90-interface-browser.el
 ;; Created: 2011-07-06
 ;; Available-from: http://github.com/wence-/f90-iface/
