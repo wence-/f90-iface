@@ -6,7 +6,7 @@
 ;; Filename: f90-interface-browser.el
 ;; Created: 2011-07-06
 ;; Available-from: http://github.com/wence-/f90-iface/
-;; Version: 1.0
+;; Version: 1.1
 
 ;; COPYRIGHT NOTICE
 
