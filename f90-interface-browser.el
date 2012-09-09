@@ -206,18 +206,6 @@ level.  For example, a LEVEL of 0 counts top-level commas."
     (when fn
       (funcall fn (f90-get-type type)))))
 
-(defun f90-lazy-completion-table ()
-  "Lazily produce a completion table of all interfaces and tag names."
-  (lexical-let ((buf (current-buffer)))
-    (lambda (string pred action)
-      (with-current-buffer buf
-        (save-excursion
-          ;; If we need to ask for the tag table, allow that.
-          (let ((enable-recursive-minibuffers t))
-            (visit-tags-table-buffer))
-          (complete-with-action action (f90-merge-into-tags-completion-table f90-all-interfaces) string pred))))))
-
-
 (defsubst f90-merge-into-tags-completion-table (ctable)
   "Merge completions in CTABLE into the tags completion table."
   (if (or tags-file-name tags-table-list)
@@ -228,6 +216,17 @@ level.  For example, a LEVEL of 0 counts top-level commas."
                  ctable)
         table)
     ctable))
+
+(defun f90-lazy-completion-table ()
+  "Lazily produce a completion table of all interfaces and tag names."
+  (lexical-let ((buf (current-buffer)))
+    (lambda (string pred action)
+      (with-current-buffer buf
+        (save-excursion
+          ;; If we need to ask for the tag table, allow that.
+          (let ((enable-recursive-minibuffers t))
+            (visit-tags-table-buffer))
+          (complete-with-action action (f90-merge-into-tags-completion-table f90-all-interfaces) string pred))))))
 
 (defsubst f90-extract-type-name (name)
   "Return the typename from NAME.
