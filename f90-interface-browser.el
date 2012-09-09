@@ -102,8 +102,7 @@
 ;;; Code:
 
 ;;; Preamble
-(eval-when-compile
-  (require 'cl))
+(require 'cl)
 (require 'thingatpt)
 (require 'f90)
 (require 'etags)
