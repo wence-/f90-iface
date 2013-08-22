@@ -282,7 +282,7 @@ the word at point.  If MATCH-SUBLIST is non-nil, only check if
 the arglist is a sublist of the specialiser's arglist.  For more
 details see `f90-approx-arglist-match' and
 `f90-browse-interface-specialisers'."
-  (interactive (let ((def (word-at-point)))
+  (interactive (let ((def (thing-at-point 'symbol)))
                  (list (completing-read
                         (format "Find interface/tag (default %s): " def)
                         (f90-lazy-completion-table)
@@ -307,7 +307,7 @@ which ARGLIST-TO-MATCH is a sublist of the specialiser's arglist.
 If INVOCATION-POINT is non-nil it should be a `point-marker'
 indicating where we were called from, for jumping back to with
 `pop-tag-mark'."
-  (interactive (let ((def (word-at-point)))
+  (interactive (let ((def (thing-at-point 'symbol)))
                  (list (completing-read
                         (format "Interface%s: "
                                 (if def
@@ -909,7 +909,7 @@ with slot B of type REAL, then A%B is returned being a REAL)."
         collect (save-excursion
                   (save-restriction
                     (when (re-search-forward
-                           (format "^[ \t]*\\([^!\n].+?\\)[ \t]*::.*\\<%s\\>"
+                           (format "^[ \t]*\\([^!\n].+?\\)[ \t]*::.*\\_<%s\\_>"
                                    arg) nil t)
                       (goto-char (match-beginning 0))
                       (let ((type (assoc arg
