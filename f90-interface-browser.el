@@ -102,7 +102,7 @@
 ;;; Code:
 
 ;;; Preamble
-(require 'cl)
+(eval-when-compile (require 'cl))
 (require 'thingatpt)
 (require 'f90)
 (require 'etags)
@@ -164,7 +164,10 @@ unqualified filename."
   "Hash table populated with all known f90 interfaces.")
 
 (defvar f90-types (make-hash-table :test 'equal)
-  "Hash table populated with all known f90 derived types.")
+  "Hash table populated with all known f90 derived types.
+The keys are type names and the values are lists of pairs of the form
+\(NAME . REST) where NAME is the name of a slot of that type and REST
+describes that slot.")
 
 ;;; Inlineable utility functions
 (defsubst f90-specialisers (name interfaces)
@@ -200,10 +203,7 @@ level.  For example, a LEVEL of 0 counts top-level commas."
 
 (defsubst f90-get-slot-type (slot type)
   "Get the type of SLOT in TYPE."
-  (let ((fn (intern-soft (format "f90-type.%s.%s"
-                                 (f90-get-parsed-type-typename type) slot))))
-    (when fn
-      (funcall fn (f90-get-type type)))))
+  (assoc slot (f90-get-type type)))
 
 (defsubst f90-merge-into-tags-completion-table (ctable)
   "Merge completions in CTABLE into the tags completion table."
@@ -505,26 +505,16 @@ default is the type of the variable."
     (fundamental-mode)
     (erase-buffer)
     (let* ((tname (format "type(%s)" type))
-           (type-struct (f90-get-type (list nil tname)))
-           fns)
-      (when type-struct
-        (setq fns (loop for name in (funcall (intern-soft
-                                              (format "f90-type.%s.-varnames"
-                                                      tname))
-                                             type-struct)
-                        collect (intern-soft (format "f90-type.%s.%s"
-                                                     tname name)))))
-      (if (null type-struct)
+           (slots (f90-get-type (list nil tname))))
+      (if (null slots)
           (insert (format "The type %s is not a known derived type."
                           type))
         (insert (format "type %s\n" type))
-        (loop for fn in fns
-              for parsed = (funcall fn type-struct)
-              then (funcall fn type-struct)
+        (loop for slot in slots
               do
               (insert (format "  %s :: %s\n"
-                              (f90-format-parsed-slot-type parsed)
-                              (f90-get-parsed-type-varname parsed))))
+                              (f90-format-parsed-slot-type slot)
+                              (f90-get-parsed-type-varname slot))))
         (insert (format "end type %s\n" type))
         (f90-mode))
       (goto-char (point-min))
@@ -836,26 +826,7 @@ needs a reference count interface, so insert one."
       (when slot
         (setf slots (nconc slot slots)))
       (forward-line 1))
-    (eval (f90-make-type-struct type slots))
-    (setq fn (intern-soft (format "make-f90-type.%s" type)))
-    (unless fn
-      (error "Something bad went wrong parsing type definition %s" type))
-    (setf (gethash type f90-types) (funcall fn))))
-
-(defun f90-make-type-struct (type slots)
-  "Create a struct describing TYPE with SLOTS."
-  (let ((struct-name (make-symbol (format "f90-type.%s" type)))
-        (varnames (reverse (mapcar (lambda (x)
-                                     (setq x (car x))
-                                     (if (string-match "\\([^(]+\\)(" x)
-                                         (match-string 1 x)
-                                       x)) slots))))
-    `(defstruct (,struct-name
-                 (:conc-name ,(make-symbol (format "f90-type.%s." type))))
-       (-varnames ',varnames :read-only t)
-       ,@(loop for (name . rest) in slots
-               collect `(,(make-symbol name) (cons ',name ',rest)
-                         :read-only t)))))
+    (setf (gethash type f90-types) slots)))
 
 (defun f90-arglist-types ()
   "Return the types of the arguments to the function at `point'."
