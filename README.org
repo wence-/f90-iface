@@ -1,7 +1,7 @@
 * NOTE
 
 This package is now maintained directly in GNU ELPA (at 
-http://elpa.gnu.org/packages/f90-interface-browser), this repository may
+http://elpa.gnu.org/packages/f90-interface-browser.html), this repository may
 or may not be kept up to date.
 
 * Fortran editing helpers for Emacs
